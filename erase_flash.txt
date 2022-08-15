@@ -1,0 +1,1 @@
+ /Users/Christoph/Documents/Arduino/hardware/espressif/esp32/tools/esptool --port /dev/cu.SLAB_USBtoUART --chip esp32 erase_flash
