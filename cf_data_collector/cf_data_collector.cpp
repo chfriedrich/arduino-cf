@@ -1,11 +1,11 @@
-#include "datacollectorClass.h"
+#include "cf_data_collector.h"
 #include "Arduino.h"
 
-datacollectorClass::datacollectorClass()
+DataCollector::DataCollector()
 {
 }
 
-void datacollectorClass::init(int newbuffersize)
+void DataCollector::init(int newbuffersize)
 {
   for(int i=0; i<RINGBUFFER_SIZE; i++)
   {
@@ -16,29 +16,28 @@ void datacollectorClass::init(int newbuffersize)
   buffersize = newbuffersize;
 }
 
-void datacollectorClass::addData(float newdata)
+void DataCollector::addData(float newdata)
 {
-  if(newdata>MINTEMP && newdata<MAXTREMP)
-  {
-    data[wp] = newdata;
-    statusflags[wp] = OK;
-  }
-  else
-  {
-    data[wp] = 0.0f;
-    statusflags[wp] = ERR;
-  }
+  int   f = OK;
+  float v = newdata;
   
+  if( checklimits && (newdata<minlimit || newdata>maxlimit) )
+	{
+		f = ERR;
+  }
+	
+	data[wp] = v;
+	statusflags[wp] = f;
   wp++;
   if(wp>buffersize)   wp = 0;
 
   calc();
 }
 
-void datacollectorClass::calc()
+void DataCollector::calc()
 {
-  float mi = MAXTREMP;
-  float ma = MINTEMP;
+  float mi = maxlimit;
+  float ma = minlimit;
 
   int valid_data_points = 0;
   float av = 0.0f;
@@ -56,28 +55,28 @@ void datacollectorClass::calc()
   }
   minimum = mi;
   maximum = ma;
-  avg = av * (1.0f / valid_data_points);
+  avg = av / valid_data_points;
   
   if(valid_data_points>0)  valid = true;
   else                     valid = false;
 }
 
-float datacollectorClass::getMin()
+float DataCollector::getMin()
 {
   return minimum;
 }
 
-float datacollectorClass::getMax()
+float DataCollector::getMax()
 {
   return maximum;
 }
 
-float datacollectorClass::getAvg()
+float DataCollector::getAvg()
 {
   return avg;
 }
 
-bool datacollectorClass::dataValid()
+bool DataCollector::dataValid()
 {
   return valid;
 }
