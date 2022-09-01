@@ -16,6 +16,15 @@ void DataCollector::init(int newbuffersize)
   buffersize = newbuffersize;
 }
 
+void DataCollector::reset(float value)
+{
+	for(int i=0; i<buffersize; i++)
+  {
+    data[i] = value;
+    statusflags[i] = ERR;
+  }
+}
+
 void DataCollector::addData(float newdata)
 {
   int   f = OK;
@@ -30,17 +39,15 @@ void DataCollector::addData(float newdata)
 	statusflags[wp] = f;
   wp++;
   if(wp>buffersize)   wp = 0;
-
-  calc();
 }
 
 void DataCollector::calc()
 {
-  float mi = maxlimit;
-  float ma = minlimit;
+  float mi = 1e40;
+  float ma = -1e40;
 
   int valid_data_points = 0;
-  float av = 0.0f;
+  double av = 0.0f;
   
   for(int i=0; i<buffersize; i++)
   {
@@ -49,13 +56,14 @@ void DataCollector::calc()
       if( data[i] < mi )  mi = data[i];
       if( data[i] > ma)   ma = data[i];
 
-      av += data[i];
+      av += (double)data[i];
       valid_data_points++;
     }
   }
   minimum = mi;
   maximum = ma;
-  avg = av / valid_data_points;
+	av /= (double)valid_data_points;
+  avg = (float)av;
   
   if(valid_data_points>0)  valid = true;
   else                     valid = false;

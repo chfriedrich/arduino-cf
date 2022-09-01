@@ -16,9 +16,9 @@ class DataCollector
     int   statusflags[RINGBUFFER_SIZE];
     int   wp = 0; //writepointer
 	
-	bool  checklimits = false;
-	float minlimit = 0.0f;
-	float maxlimit = 0.0f;
+		bool  checklimits = false;
+		float minlimit = 0.0f;
+		float maxlimit = 0.0f;
 	
     float minimum = 0.0f;
     float maximum = 0.0f;
@@ -30,6 +30,7 @@ class DataCollector
   public:
     DataCollector();
     void init(int newbuffersize);
+		void reset(float value);
     void addData(float newdata);
     void calc();
     float getMin();
