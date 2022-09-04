@@ -1,356 +1,184 @@
 
-/*
+#include "cf_adxl357.h"
+#include <SPI.h>
 
-    Copyright (c) 2019 Seeed Technology Co., Ltd.
-    Website    : www.seeed.cc
-    Author     : downey
-    Create Time: Jan 2018
-    Change Log :
-
-    The MIT License (MIT)
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in
-    all copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-    THE SOFTWARE.
-*/
-#include "Seeed_adxl357b.h"
-
-
-
-
-
-/** begin(),i2c init & set defaule I2C address.
-    @param set i2c_address
-**/
-int32_t Adxl357b::begin(uint8_t dev_addr) {
-    uint8_t ID = 0;
-    Wire.begin();
-    _dev_addr = dev_addr;
-    if (readDeviceID(ID) || (ID != 0xed)) {
-        return -1;
+void adxl357::init()
+{
+    if(PIN_MISO!=-1 && PIN_MOSI!=-1 && PIN_SCK!=-1 && PIN_SS!=-1)
+    {
+        // use custom spi pins
+        SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_SS);
     }
-    adxlReset();
-    delay(200);
-    return 0;
-}
-
-
-int32_t Adxl357b::setAdxlRange(Adxl_Range range) {
-    uint8_t orig = 0;
-    i2cReadByte(SET_RANGE_REG_ADDR, orig);
-    // Serial.print("read reg = ");
-    // Serial.println(orig);
-    orig |= range;
-    // Serial.println(orig);
-    return i2cWriteByte(SET_RANGE_REG_ADDR, orig);
-}
-
-
-int32_t Adxl357b::getActiveCnt(void) {
-    uint8_t cnt = 0;
-    if (i2cReadByte(GET_ACTIVE_COUNT_REG_ADDR, cnt)) {
-        return -1;
-    }
-    return cnt;
-}
-
-int32_t Adxl357b::adxlReset(void) {
-    return i2cWriteByte(RESET_REG_ADDR, 0x52);
-}
-
-
-int32_t Adxl357b::setActThreshold(float acc_g, float factory) {
-    int16_t thres = 0;
-    thres = (int16_t)(acc_g / factory);
-    thres >>= 3;
-    // thres = 13300;
-    // thres >>= 3;
-    Serial.println(thres, HEX);
-
-    return i2cWriteU16(SET_THRESHOLD_REG_ADDR, (uint16_t)thres);
-}
-
-/** set action enable.
-    @param enable_x enable x axis action.When the x axis result above threshold,trigger event.
-    @param enable_y enable y axis action.When the y axis result above threshold,trigger event.
-    @param enable_z enable z axis action.When the z axis result above threshold,trigger event.
- **/
-int32_t Adxl357b::setActEnable(bool enable_x, bool enable_y, bool enable_z) {
-    uint8_t val = 0;
-    val = val | (enable_z << 2) | (enable_y << 1) | enable_x;
-    return i2cWriteByte(ACTION_ENABLE_REG_ADDR, val);
-}
-
-int32_t Adxl357b::setIntPinMap(uint8_t val) {
-    return i2cWriteByte(SET_INT_PIN_MAP_REG_ADDR, val);
-}
-
-/** Config ADXL357 mode.
-    bit2 - DRDY_OFF ,
-    bit1 - TEMP-OFF ,
-    bit0 - running mode,0 for measurement mode,1 for standby mode.
- **/
-int32_t Adxl357b::setPowerCtr(uint8_t val) {
-    return i2cWriteByte(POWER_CTR_REG_ADDR, val);
-}
-
-
-int32_t Adxl357b::readTemperature(float& T) {
-    int32_t ret = 0;
-    int16_t temperature = 0;
-    uint16_t val = 0;
-    if (i2cReadU16(TEMPERATURE_REG_ADDR, val)) {
-        return -1;
+    else
+    {
+        // use default spi pins (from arduino board definition file)
+        SPI.begin();
     }
 
-    temperature = val;
-    T = 25 + (temperature - 1852) / (-9.05);
-    return 0;
+    // Slave select pin initialisieren
+    pinMode(PIN_SS, OUTPUT);
+    digitalWrite(PIN_SS, HIGH);
+
+    resetSensor();
 }
 
-int32_t Adxl357b::setFilter(void) {
-    /*011 - 15.545*10^-3*ODR, 0011 - 500HZ&125HZ*/
-    return i2cWriteByte(FILTER_REG_ADDR, 0x33);
+void adxl357::setPins(uint8_t aPIN_MISO, uint8_t aPIN_MOSI, uint8_t aPIN_SCK, uint8_t aPIN_SS)
+{
+    PIN_MISO = aPIN_MISO;
+    PIN_MOSI = aPIN_MOSI;
+    PIN_SCK  = aPIN_SCK;
+    PIN_SS   = aPIN_SS;
 }
 
-
-int32_t Adxl357b::getFifoEntry(uint8_t& entry) {
-    return i2cReadByte(FIFO_ENTRY_REG_ADDR, entry);
+void adxl357::setRange(T_adxl_range newrange)
+{
+    uint8_t temp = readReg(SET_RANGE_REG_ADDR);
+    // bit 0 and 1 are range bits
+    temp &= 0xFC;
+    temp |= newrange;
+    writeReg(SET_RANGE_REG_ADDR, temp);
 }
 
-
-int32_t Adxl357b::readXYZAxisResultDataFromFIFO(int32_t& x, int32_t& y, int32_t& z) {
-    uint8_t data[9] = {0};
-    x = y = z = 0;
-
-    if (i2cReadBytes(FIFO_DATA_REG_ADDR, data, 9)) {
-        return -1;
+void adxl357::resetSensor()
+{   
+    writeReg(RESET_REG_ADDR, 0x52);
+    
+    for(uint8_t i=0; i<32; i++)
+    {
+        xdata_raw[i] = 0;
+        ydata_raw[i] = 0;
+        zdata_raw[i] = 0;
     }
-    x = ((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | ((uint32_t)data[2] >> 4);
-    y = ((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((uint32_t)data[5] >> 4);
-    z = ((uint32_t)data[6] << 12) | ((uint32_t)data[7] << 4) | ((uint32_t)data[8] >> 4);
-
-    if (x & 0x80000) {
-        x = (x & 0x7ffff) - 0x80000;
-    }
-    if (y & 0x80000) {
-        y = (y & 0x7ffff) - 0x80000;
-    }
-    if (z & 0x80000) {
-        z = (z & 0x7ffff) - 0x80000;
-    }
-
-    // Serial.println("....");
-    // Serial.println(x);
-    // Serial.println(y);
-    // Serial.println(z);
-    // Serial.println("....");
-    return 0;
 }
 
-
-
-int32_t Adxl357b::readXYZAxisResultData(int32_t& x, int32_t& y, int32_t& z) {
-    uint8_t data[9] = {0};
-    x = y = z = 0;
-
-    if (i2cReadBytes(FIFO_DATA_REG_ADDR, data, 9)) {
-        return -1;
-    }
-    x = ((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | ((uint32_t)data[2] >> 4);
-    y = ((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((uint32_t)data[5] >> 4);
-    z = ((uint32_t)data[6] << 12) | ((uint32_t)data[7] << 4) | ((uint32_t)data[8] >> 4);
-    // Serial.println("....");
-    // for(int i=0;i<9;i++)
-    // {
-    // 	Serial.print(data[i],HEX);
-    // 	Serial.print(".");
-    // }
-    if (x & 0x80000) {
-        x = (x & 0x7ffff) - 0x80000;
-    }
-    if (y & 0x80000) {
-        y = (y & 0x7ffff) - 0x80000;
-    }
-    if (z & 0x80000) {
-        z = (z & 0x7ffff) - 0x80000;
-    }
-
-    // Serial.println("....");
-    // Serial.println(x);
-    // Serial.println(y);
-    // Serial.println(z);
-    // Serial.println("....");
-    return 0;
+// enable temperature and acceleration measurement
+void adxl357::enableSensor()
+{
+    uint8_t temp = readReg(POWER_CTR_REG_ADDR);
+    // bit 0 ... 1 for standby mode, 0 for measurement mode
+    // bit 1 ... 1 for temperature measurement disable, 0 for enable
+    temp &= 0xFC;
+    writeReg(POWER_CTR_REG_ADDR, temp);
 }
 
-
-
-int32_t Adxl357b::readDeviceID(uint8_t& ID) {
-    return i2cReadByte(DEV_ID_REG_ADDR, ID);
+// returns acceleration data in degrees celsius
+float adxl357::readTemperature_C()
+{
+    uint8_t hbyte = readReg(0x06);
+    uint8_t lbyte = readReg(0x07);
+    uint16_t temp = ((uint16_t)hbyte << 8) + (uint16_t)lbyte;
+    return 25.0 + (float)(temp - 1852) / (-9.05);
 }
 
-int32_t Adxl357b::readDeviceVersion(uint8_t& ver) {
-    return i2cReadByte(DEV_VERSION_ID_REG_ADDR, ver);
+// for setting low and high pass filters (see datasheet page 38)
+// after reset, all filters are disabled
+void adxl357::setFilter(uint8_t hpf_corner, uint8_t odr_lpf)
+{
+    uint8_t temp = (hpf_corner << 4) | odr_lpf;
+    writeReg(FILTER_REG_ADDR, temp);
 }
 
+// converts one fifo entry to acceleration data for one axis
+int32_t adxl357::fifo_to_axisdata(uint32_t fifodata)
+{
+    // the right 4 bits are empty or indicators, remove them
+    int32_t val = fifodata >> 4;
 
+    // convert unsigned to signed
+    if (val & 0x80000)
+        val = (val & 0x7ffff) - 0x80000;
 
-int32_t Adxl357b::getAdxl357Status(uint8_t& byte) {
-    return i2cReadByte(STATUS_REG_ADDR, byte);
+    return val;
 }
 
-bool Adxl357b::checkDataReady(void) {
-    uint8_t stat = 0;
-    getAdxl357Status(stat);
-    // Serial.println(",,,");
-    // Serial.println(stat,HEX);
-    // Serial.println(",,,");
-    return stat & 0x01;
+uint8_t adxl357::readDeviceID()
+{
+    return readReg(DEV_ID_REG_ADDR);
 }
 
-/*********************************************************************************************************************/
-/*********************************************************************************************************************/
-
-int32_t Adxl357b::i2cWriteBytes(uint8_t reg, uint8_t* data, uint32_t write_len) {
-    Wire.beginTransmission(_dev_addr);
-    Wire.write(reg);
-    for (int i = 0; i < write_len; i++) {
-        Wire.write(data[i]);
-    }
-    return Wire.endTransmission();
+uint8_t adxl357::readDeviceVersion()
+{
+    return readReg(DEV_VERSION_ID_REG_ADDR);
 }
 
-
-int32_t Adxl357b::i2cWriteByte(uint8_t reg, uint8_t data) {
-    Wire.beginTransmission(_dev_addr);
-    Wire.write(reg);
-    Wire.write(data);
-    return Wire.endTransmission();
+uint8_t adxl357::readStatus()
+{
+    return readReg(STATUS_REG_ADDR);
 }
 
+// ###################################################
 
-int32_t Adxl357b::i2cWriteU16(uint8_t reg, uint16_t data) {
-    uint8_t temp[2] = {0};
-    temp [0] = (uint8_t)(data >> 8);
-    temp [1] = (uint8_t)data;
-    return i2cWriteBytes(reg, temp, 2);
+// write single 8 bit register
+void adxl357::writeReg(uint8_t address, uint8_t value)
+{
+  uint8_t dataToSend = (address << 1) | WRITE_BYTE;
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST , SPI_MODE0));
+  digitalWrite(PIN_SS, LOW);
+  SPI.transfer(dataToSend);
+  SPI.transfer(value);
+  digitalWrite(PIN_SS, HIGH);
+  SPI.endTransaction();
 }
 
-
-int32_t Adxl357b::i2cWriteU32(uint8_t reg, uint32_t data) {
-    uint8_t temp[4] = {0};
-    temp [0] = (uint8_t)(data >> 24);
-    temp [1] = (uint8_t)(data >> 16);
-    temp [2] = (uint8_t)(data >> 8);
-    temp [3] = (uint8_t)(data);
-    return i2cWriteBytes(reg, temp, 4);
+// read single 8 bit register
+unsigned int adxl357::readReg(uint8_t address)
+{
+  unsigned int result = 0;
+  uint8_t dataToSend = (address << 1) | READ_BYTE;
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST , SPI_MODE0));
+  digitalWrite(PIN_SS, LOW);
+  SPI.transfer(dataToSend);
+  result = SPI.transfer(0x00);
+  digitalWrite(PIN_SS, HIGH);
+  SPI.endTransaction();
+  return result;
 }
 
+// ###################################################
 
+void adxl357::readAllFromFifo()
+{
+    // Read all data from fifo
+    uint32_t fifodata[96];
+    SPI.beginTransaction(SPISettings(1000000, MSBFIRST , SPI_MODE0));
+    digitalWrite(PIN_SS, LOW);
+    SPI.transfer( (FIFO_DATA_REG_ADDR << 1) | READ_BYTE );
 
-int32_t Adxl357b::i2cReadByte(uint8_t reg, uint8_t& byte) {
-    uint32_t time_out_count = 0;
-    Wire.beginTransmission(_dev_addr);
-    Wire.write(reg);
-    Wire.endTransmission(false);
-    Wire.requestFrom(_dev_addr, (uint8_t)1);
-    while (1 != Wire.available()) {
-        time_out_count++;
-        if (time_out_count > 10) {
-            return -1;
+    uint8_t fiforeg_cnt = 0;
+    while(fiforeg_cnt < 96)
+    {
+        uint32_t fiforeg = 0;
+        for(int i=0; i<3; i++)
+        {
+            fiforeg  |= SPI.transfer(0x00) << (i*8);
         }
-        delay(1);
-    }
-    byte = Wire.read();
-    return 0;
-}
 
-
-int32_t Adxl357b::i2cReadU16(uint8_t reg, uint16_t& value) {
-    uint32_t time_out_count = 0;
-    value = 0;
-    Wire.beginTransmission(_dev_addr);
-    Wire.write(reg);
-    Wire.endTransmission(false);
-    Wire.requestFrom(_dev_addr, (uint8_t)2);
-    while (2 != Wire.available()) {
-        time_out_count++;
-        if (time_out_count > 10) {
-            return -1;
+        // check empty indicator
+        if( fiforeg & 0x01 )
+        {
+            break;
         }
-        delay(1);
-    }
-    value |= Wire.read();
-    value <<= 8;
-    value |= Wire.read();
-    return 0;
-}
-
-
-int32_t Adxl357b::i2cReadU32(uint8_t reg, uint32_t& value) {
-    uint32_t time_out_count = 0;
-    value = 0;
-    Wire.beginTransmission(_dev_addr);
-    Wire.write(reg);
-    Wire.endTransmission(false);
-    Wire.requestFrom(_dev_addr, (uint8_t)4);
-    while (4 != Wire.available()) {
-        time_out_count++;
-        if (time_out_count > 10) {
-            return -1;
+        else
+        {
+            fifodata[fiforeg_cnt] = fiforeg;
+            fiforeg_cnt++;
         }
-        delay(1);
     }
-    value |= Wire.read();
-    value <<= 24;
+    digitalWrite(PIN_SS, HIGH);
+    SPI.endTransaction();
 
-    value |= Wire.read();
-    value <<= 16;
+    // Transaction complete
 
-    value |= Wire.read();
-    value <<= 8;
+    // debug: output data
+    for(int i=0; i<fiforeg_cnt; i++)
+    {
+        char c[100];
+        sprintf(c, "%2d:  0x%08x\n", i, fifodata[i]);
+        Serial.print(c);
+    }
+    Serial.println("");
 
-    value |= Wire.read();
-    return 0;
+    // sort data
+    // fifodata, index 0 enthält die neuesten daten,
+    // d.h. von hinten beginnen
 }
-
-
-
-int32_t Adxl357b::i2cReadBytes(uint8_t reg, uint8_t* data, uint32_t read_len) {
-    uint32_t time_out_count = 0;
-    Wire.beginTransmission(_dev_addr);
-    Wire.write(reg);
-    Wire.endTransmission(false);
-
-    Wire.requestFrom(_dev_addr, read_len);
-    while (read_len != Wire.available()) {
-        time_out_count++;
-        if (time_out_count > 10) {
-            return -1;
-        }
-        delay(1);
-    }
-    for (int i = 0; i < read_len; i++) {
-        data[i] = Wire.read();
-    }
-    return 0;
-
-}
-
-/*********************************************************************************************************************/
-/*********************************************************************************************************************/
