@@ -30,7 +30,7 @@ void adxl357::setPins(uint8_t aPIN_MISO, uint8_t aPIN_MOSI, uint8_t aPIN_SCK, ui
     PIN_SS   = aPIN_SS;
 }
 
-void adxl357::setRange(T_adxl_range newrange)
+void adxl357::writeRange(T_adxl_range newrange)
 {
     uint8_t temp = readReg(SET_RANGE_REG_ADDR);
     // bit 0 and 1 are range bits
@@ -64,18 +64,28 @@ void adxl357::enableSensor()
 // returns acceleration data in degrees celsius
 float adxl357::readTemperature_C()
 {
-    uint8_t hbyte = readReg(0x06);
-    uint8_t lbyte = readReg(0x07);
+    uint8_t hbyte = readReg(REG_TEMP_HIGH);
+    uint8_t lbyte = readReg(REG_TEMP_LOW);
     uint16_t temp = ((uint16_t)hbyte << 8) + (uint16_t)lbyte;
     return 25.0 + (float)(temp - 1852) / (-9.05);
 }
 
 // for setting low and high pass filters (see datasheet page 38)
 // after reset, all filters are disabled
-void adxl357::setFilter(uint8_t hpf_corner, uint8_t odr_lpf)
+void adxl357::writeFilter(uint8_t hpf_corner, uint8_t odr_lpf)
 {
     uint8_t temp = (hpf_corner << 4) | odr_lpf;
     writeReg(FILTER_REG_ADDR, temp);
+}
+
+uint8_t adxl357::readFifoEntryCount()
+{
+    return readReg(FIFO_ENTRY_REG_ADDR);
+}
+
+void adxl357::writeSelfTest(uint8_t val)
+{
+    writeReg( REG_SELF_TEST, val & 0x03 );
 }
 
 // converts one fifo entry to acceleration data for one axis
@@ -112,7 +122,7 @@ uint8_t adxl357::readStatus()
 void adxl357::writeReg(uint8_t address, uint8_t value)
 {
   uint8_t dataToSend = (address << 1) | WRITE_BYTE;
-  SPI.beginTransaction(SPISettings(1000000, MSBFIRST , SPI_MODE0));
+  SPI.beginTransaction(SPISettings(SPI_FREQUENCY_HZ, MSBFIRST , SPI_MODE0));
   digitalWrite(PIN_SS, LOW);
   SPI.transfer(dataToSend);
   SPI.transfer(value);
@@ -125,7 +135,7 @@ unsigned int adxl357::readReg(uint8_t address)
 {
   unsigned int result = 0;
   uint8_t dataToSend = (address << 1) | READ_BYTE;
-  SPI.beginTransaction(SPISettings(1000000, MSBFIRST , SPI_MODE0));
+  SPI.beginTransaction(SPISettings(SPI_FREQUENCY_HZ, MSBFIRST , SPI_MODE0));
   digitalWrite(PIN_SS, LOW);
   SPI.transfer(dataToSend);
   result = SPI.transfer(0x00);
@@ -140,7 +150,7 @@ void adxl357::readAllFromFifo()
 {
     // Read all data from fifo
     uint32_t fifodata[96];
-    SPI.beginTransaction(SPISettings(1000000, MSBFIRST , SPI_MODE0));
+    SPI.beginTransaction(SPISettings(SPI_FREQUENCY_HZ, MSBFIRST , SPI_MODE0));
     digitalWrite(PIN_SS, LOW);
     SPI.transfer( (FIFO_DATA_REG_ADDR << 1) | READ_BYTE );
 
@@ -150,11 +160,11 @@ void adxl357::readAllFromFifo()
         uint32_t fiforeg = 0;
         for(int i=0; i<3; i++)
         {
-            fiforeg  |= SPI.transfer(0x00) << (i*8);
+            fiforeg |= ( SPI.transfer(0x00) << ((2-i)*8) );
         }
 
-        // check empty indicator
-        if( fiforeg & 0x01 )
+        // check fifo empty indicator
+        if( fiforeg & 0x02 )
         {
             break;
         }
@@ -170,15 +180,23 @@ void adxl357::readAllFromFifo()
     // Transaction complete
 
     // debug: output data
+    /*
     for(int i=0; i<fiforeg_cnt; i++)
     {
         char c[100];
-        sprintf(c, "%2d:  0x%08x\n", i, fifodata[i]);
+        //sprintf(c, "%2d:  0x%08x\n", i, fifodata[i]);
+        sprintf(c, "%2d  ", i);
         Serial.print(c);
+        Serial.println(fifodata[i], BIN);
     }
     Serial.println("");
+    */
 
     // sort data
-    // fifodata, index 0 enthält die neuesten daten,
+    // fifodata, [0] enthält die neuesten daten,
+    // [fiforeg_cnt-1] die ältesten,
     // d.h. von hinten beginnen
+    // if( fifodata[] & 0x01 ) { x daten }
+    // wenn man von hinten nach vorne geht,
+    // ist die Reihenfolge x, z, y, x, z, y, ...
 }

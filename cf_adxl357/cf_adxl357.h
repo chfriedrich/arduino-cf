@@ -10,7 +10,9 @@
 #define DEV_ID_REG_ADDR           0x02
 #define DEV_VERSION_ID_REG_ADDR   0x03
 #define STATUS_REG_ADDR           0x04
-#define FIFO_ENTRY_REG_ADDR       0x06
+#define FIFO_ENTRY_REG_ADDR       0x05
+#define REG_TEMP_HIGH             0x06
+#define REG_TEMP_LOW              0x07
 
 #define ACTION_ENABLE_REG_ADDR    0x24
 #define SET_THRESHOLD_REG_ADDR    0x25
@@ -26,12 +28,15 @@
 #define FILTER_REG_ADDR           0x28
 
 #define SET_RANGE_REG_ADDR        0x2c
+#define REG_SELF_TEST             0x2E
 #define RESET_REG_ADDR            0x2f
 
 #define READ_BYTE                 0x01
 #define WRITE_BYTE                0x00
 
 #define BUFFER_SIZE_PER_AXIS      32
+
+#define SPI_FREQUENCY_HZ          10000000
 
 
 typedef enum {
@@ -50,16 +55,18 @@ class adxl357
     void  setPins(uint8_t aPIN_MISO, uint8_t aPIN_MOSI, uint8_t aPIN_SCK, uint8_t aPIN_SS);
     void  resetSensor();
     void  init();
-    void  setRange(T_adxl_range newrange);
+    void  writeRange(T_adxl_range newrange);
     void  enableSensor();
-    void  setFilter(uint8_t hpf_corner, uint8_t odr_lpf);
+    void  writeFilter(uint8_t hpf_corner, uint8_t odr_lpf);
     uint8_t readDeviceID();
     uint8_t readDeviceVersion();
 
     // for loop
     uint8_t readStatus();
     float   readTemperature_C();
-    void    readAllFromFifo();  
+    uint8_t readFifoEntryCount();
+    void    readAllFromFifo();
+    void    writeSelfTest(uint8_t val);
 
   private:
     int32_t PIN_MISO = -1;
