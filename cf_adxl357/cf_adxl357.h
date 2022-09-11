@@ -52,20 +52,21 @@ class adxl357
     ~adxl357() {};
 
     // for initialisation
-    void  setPins(uint8_t aPIN_MISO, uint8_t aPIN_MOSI, uint8_t aPIN_SCK, uint8_t aPIN_SS);
-    void  resetSensor();
-    void  init();
-    void  writeRange(T_adxl_range newrange);
-    void  enableSensor();
-    void  writeFilter(uint8_t hpf_corner, uint8_t odr_lpf);
+    void    setPins(uint8_t aPIN_MISO, uint8_t aPIN_MOSI, uint8_t aPIN_SCK, uint8_t aPIN_SS);
+    void    resetSensor();
+    void    init();
+    void    writeRange(T_adxl_range newrange);
+    void    enableSensor();
+    void    writeFilter(uint8_t hpf_corner, uint8_t odr_lpf);
     uint8_t readDeviceID();
     uint8_t readDeviceVersion();
+    void    measureOffset();
 
     // for loop
     uint8_t readStatus();
     float   readTemperature_C();
     uint8_t readFifoEntryCount();
-    void    readAllFromFifo();
+    void    readAllFromFifo(int32_t xarr[], int32_t yarr[], int32_t zarr[], uint8_t *len);
     void    writeSelfTest(uint8_t val);
 
   private:
@@ -74,9 +75,7 @@ class adxl357
     int32_t PIN_SCK  = -1;
     int32_t PIN_SS   = -1;
     
-    uint32_t xdata_raw[BUFFER_SIZE_PER_AXIS];
-    uint32_t ydata_raw[BUFFER_SIZE_PER_AXIS];
-    uint32_t zdata_raw[BUFFER_SIZE_PER_AXIS];
+    int32_t offset[3];
 
     int32_t fifo_to_axisdata(uint32_t fifodata);
     void writeReg(uint8_t address, uint8_t value);

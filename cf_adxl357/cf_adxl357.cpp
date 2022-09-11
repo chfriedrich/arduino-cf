@@ -19,6 +19,8 @@ void adxl357::init()
     pinMode(PIN_SS, OUTPUT);
     digitalWrite(PIN_SS, HIGH);
 
+    offset[0] = offset[1] = offset[2] = 0;
+
     resetSensor();
 }
 
@@ -43,12 +45,14 @@ void adxl357::resetSensor()
 {   
     writeReg(RESET_REG_ADDR, 0x52);
     
+    /*
     for(uint8_t i=0; i<32; i++)
     {
         xdata_raw[i] = 0;
         ydata_raw[i] = 0;
         zdata_raw[i] = 0;
     }
+    */
 }
 
 // enable temperature and acceleration measurement
@@ -146,7 +150,43 @@ unsigned int adxl357::readReg(uint8_t address)
 
 // ###################################################
 
-void adxl357::readAllFromFifo()
+void adxl357::measureOffset()
+{
+    int32_t st = micros();
+    int32_t count = 0;
+    int64_t xsum = 0;
+    int64_t ysum = 0;
+    int64_t zsum = 0;
+    while(count < 5000)  // 5000 samples for averaging
+    {
+        int32_t t = micros();
+        if(t > st+2000)
+        {
+            st = t;
+            int32_t xarr[BUFFER_SIZE_PER_AXIS];
+            int32_t yarr[BUFFER_SIZE_PER_AXIS];
+            int32_t zarr[BUFFER_SIZE_PER_AXIS];
+            uint8_t len;
+            readAllFromFifo(xarr, xarr, xarr, &len);
+            for(int i=0; i<len; i++)
+            {
+                xsum += xarr[i];
+                ysum += yarr[i];
+                zsum += zarr[i];
+            }
+            count += len;
+        }
+    }
+    offset[0] = (int32_t) (xsum / (int64_t)count);
+    offset[1] = (int32_t) (ysum / (int64_t)count);
+    offset[2] = (int32_t) (zsum / (int64_t)count);
+
+    Serial.println("x offset: " + String(offset[0]));
+    Serial.println("y offset: " + String(offset[1]));
+    Serial.println("z offset: " + String(offset[2]));
+}
+
+void adxl357::readAllFromFifo(int32_t xarr[], int32_t yarr[], int32_t zarr[], uint8_t *len)
 {
     // Read all data from fifo
     uint32_t fifodata[96];
@@ -199,4 +239,16 @@ void adxl357::readAllFromFifo()
     // if( fifodata[] & 0x01 ) { x daten }
     // wenn man von hinten nach vorne geht,
     // ist die Reihenfolge x, z, y, x, z, y, ...
+
+    int8_t i = fiforeg_cnt;
+    int8_t count = 0;
+    while(i >= 0)
+    {
+        xarr[count] = fifodata[i] - offset[0];
+        zarr[count] = fifodata[i-1] - offset[0];
+        yarr[count] = fifodata[i-2] - offset[0];
+        count++;
+        i -= 3;
+    }
+    *len = count;
 }
