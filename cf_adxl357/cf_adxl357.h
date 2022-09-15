@@ -36,7 +36,7 @@
 
 #define BUFFER_SIZE_PER_AXIS      32
 
-#define SPI_FREQUENCY_HZ          10000000
+#define SPI_FREQUENCY_HZ          2000000
 
 
 typedef enum {
@@ -66,7 +66,7 @@ class adxl357
     uint8_t readStatus();
     float   readTemperature_C();
     uint8_t readFifoEntryCount();
-    void    readAllFromFifo(int32_t xarr[], int32_t yarr[], int32_t zarr[], uint8_t *len);
+    void    readAllFromFifo(int32_t xarr[], int32_t yarr[], int32_t zarr[], uint8_t &len);
     void    writeSelfTest(uint8_t val);
 
   private:

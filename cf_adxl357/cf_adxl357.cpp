@@ -96,7 +96,7 @@ void adxl357::writeSelfTest(uint8_t val)
 int32_t adxl357::fifo_to_axisdata(uint32_t fifodata)
 {
     // the right 4 bits are empty or indicators, remove them
-    int32_t val = fifodata >> 4;
+    int32_t val = (fifodata >> 4) & 0xFFFFF;
 
     // convert unsigned to signed
     if (val & 0x80000)
@@ -152,11 +152,13 @@ unsigned int adxl357::readReg(uint8_t address)
 
 void adxl357::measureOffset()
 {
-    int32_t st = micros();
+    offset[0] = offset[1] = offset[2] = 0;
     int32_t count = 0;
     int64_t xsum = 0;
     int64_t ysum = 0;
     int64_t zsum = 0;
+
+    int32_t st = micros();
     while(count < 5000)  // 5000 samples for averaging
     {
         int32_t t = micros();
@@ -167,7 +169,7 @@ void adxl357::measureOffset()
             int32_t yarr[BUFFER_SIZE_PER_AXIS];
             int32_t zarr[BUFFER_SIZE_PER_AXIS];
             uint8_t len;
-            readAllFromFifo(xarr, xarr, xarr, &len);
+            readAllFromFifo(xarr, yarr, zarr, len);
             for(int i=0; i<len; i++)
             {
                 xsum += xarr[i];
@@ -177,16 +179,16 @@ void adxl357::measureOffset()
             count += len;
         }
     }
-    offset[0] = (int32_t) (xsum / (int64_t)count);
-    offset[1] = (int32_t) (ysum / (int64_t)count);
-    offset[2] = (int32_t) (zsum / (int64_t)count);
+    offset[0] = xsum / (int64_t)count;
+    offset[1] = ysum / (int64_t)count;
+    offset[2] = zsum / (int64_t)count;
 
     Serial.println("x offset: " + String(offset[0]));
     Serial.println("y offset: " + String(offset[1]));
     Serial.println("z offset: " + String(offset[2]));
 }
 
-void adxl357::readAllFromFifo(int32_t xarr[], int32_t yarr[], int32_t zarr[], uint8_t *len)
+void adxl357::readAllFromFifo(int32_t xarr[], int32_t yarr[], int32_t zarr[], uint8_t &len)
 {
     // Read all data from fifo
     uint32_t fifodata[96];
@@ -200,7 +202,8 @@ void adxl357::readAllFromFifo(int32_t xarr[], int32_t yarr[], int32_t zarr[], ui
         uint32_t fiforeg = 0;
         for(int i=0; i<3; i++)
         {
-            fiforeg |= ( SPI.transfer(0x00) << ((2-i)*8) );
+            uint8_t readout = SPI.transfer(0x00);
+            fiforeg |= ( (uint32_t)readout << ((2-i)*8) );
         }
 
         // check fifo empty indicator
@@ -218,37 +221,22 @@ void adxl357::readAllFromFifo(int32_t xarr[], int32_t yarr[], int32_t zarr[], ui
     SPI.endTransaction();
 
     // Transaction complete
-
-    // debug: output data
-    /*
-    for(int i=0; i<fiforeg_cnt; i++)
-    {
-        char c[100];
-        //sprintf(c, "%2d:  0x%08x\n", i, fifodata[i]);
-        sprintf(c, "%2d  ", i);
-        Serial.print(c);
-        Serial.println(fifodata[i], BIN);
-    }
-    Serial.println("");
-    */
-
     // sort data
-    // fifodata, [0] enthält die neuesten daten,
-    // [fiforeg_cnt-1] die ältesten,
-    // d.h. von hinten beginnen
-    // if( fifodata[] & 0x01 ) { x daten }
-    // wenn man von hinten nach vorne geht,
-    // ist die Reihenfolge x, z, y, x, z, y, ...
+    // fifodata, [0] enthält die ältesten daten,
+    // [fiforeg_cnt-1] die neuesten
+    // [0] hat immer am niederwertigsten bit eine 1, ist daher immer die x achse
+    // [1] ist immer y
+    // [2] ist immer z, usw.
 
-    int8_t i = fiforeg_cnt;
+    int8_t i = 0;
     int8_t count = 0;
-    while(i >= 0)
+    while( i < fiforeg_cnt )
     {
-        xarr[count] = fifodata[i] - offset[0];
-        zarr[count] = fifodata[i-1] - offset[0];
-        yarr[count] = fifodata[i-2] - offset[0];
+        xarr[count] = fifo_to_axisdata(fifodata[i])   - offset[0];
+        yarr[count] = fifo_to_axisdata(fifodata[i+1]) - offset[1];
+        zarr[count] = fifo_to_axisdata(fifodata[i+2]) - offset[2];
+        i += 3;
         count++;
-        i -= 3;
     }
-    *len = count;
+    len = count;
 }
